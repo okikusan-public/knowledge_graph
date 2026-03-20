@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+.DS_Store
+.claude/settings.local.json
+*.egg-info/
+dist/
+build/
+docs/*
+!docs/.gitkeep
+!docs/README.md
