@@ -14,7 +14,7 @@ import os
 # 新規プロジェクト追加時はここにエントリを追加する
 PROJECTS = {
     "default": {
-        "neo4j_uri": "bolt://localhost:7687",
+        "neo4j_uri": "bolt://localhost:7689",
         "neo4j_user": "neo4j",
         "neo4j_password": "changeme",
         "embed_url": "http://localhost:8082/embed",

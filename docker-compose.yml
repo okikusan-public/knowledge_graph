@@ -13,8 +13,8 @@ services:
     image: neo4j:5.23-community
     container_name: graphrag-neo4j
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "7476:7474"
+      - "7689:7687"
     environment:
       NEO4J_AUTH: neo4j/changeme
       NEO4J_PLUGINS: '["graph-data-science"]'
