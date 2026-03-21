@@ -152,20 +152,22 @@ def save_entities_and_link(driver, cfg, source_id, source_label, entities, relat
             ON CREATE SET r.created_at = datetime()
         """, source_id=source_id, names=list(seen_names))
 
-        # Create RELATES_TO relationships
+        # Create RELATES_TO relationships (allow linking to existing entities in graph)
         rel_count = 0
         for rel in relationships:
             src = rel["source"].strip()
             tgt = rel["target"].strip()
-            if src in seen_names and tgt in seen_names and src != tgt:
-                session.run("""
+            if src and tgt and src != tgt:
+                result = session.run("""
                     MATCH (a:Entity {name: $src}), (b:Entity {name: $tgt})
                     MERGE (a)-[r:RELATES_TO]->(b)
                     ON CREATE SET r.type = $type, r.description = $desc, r.weight = 1.0
                     ON MATCH SET r.weight = r.weight + 0.5
+                    RETURN a.name
                 """, src=src, tgt=tgt, type=rel.get("type", "related"),
                      desc=rel.get("description", ""))
-                rel_count += 1
+                if result.single():
+                    rel_count += 1
 
     return len(unique_entities), rel_count
 
