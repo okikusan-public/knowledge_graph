@@ -18,6 +18,7 @@ knowledge_graph/
 │   ├── community_detection.py       # GDS Leiden 3-level community detection
 │   ├── embed_existing.py            # Batch-assign embeddings to existing nodes
 │   ├── graph_search.py              # Vector search + graph traversal hybrid
+│   ├── quiz.py                      # Spaced repetition quiz system
 │   ├── render_pages.py              # PDF → per-page PNG (visual-extract preprocessing)
 │   └── vector_search.py             # Vector similarity search CLI
 └── tests/
@@ -180,6 +181,46 @@ echo '{"source":{"label":"Note","properties":{"text":"..."}},
 
 Source types are dynamic — any alphanumeric label can be used. All source nodes get `id`, `created_at`, and `embedding` automatically.
 
+### Spaced Repetition Quiz
+
+Strengthen knowledge retention through retrieval practice with GraphRAG entities. Uses a spaced repetition algorithm (SM-2 inspired) to optimize review timing — correct answers extend the interval, incorrect answers reset it.
+
+```bash
+# Select entities due for review
+python scripts/quiz.py select -p <project> -k 5
+
+# Select with topic filtering (vector similarity)
+python scripts/quiz.py select -p <project> -k 5 --topic "認知科学"
+
+# Record a quiz result
+python scripts/quiz.py record -p <project> --json '{
+  "entity_name": "Retrieval Practice",
+  "is_correct": true,
+  "question": "検索練習とは？",
+  "user_answer": "思い出す行為が記憶を強化する",
+  "score": 1.0,
+  "feedback": "正解"
+}'
+
+# View quiz statistics
+python scripts/quiz.py stats -p <project>
+
+# Run as a Claude Code skill (interactive quiz session)
+/quiz
+/quiz --topic "認知科学"
+/quiz --count 3
+```
+
+Selection algorithm:
+1. **Priority 3**: Entities with more incorrect than correct answers (struggling)
+2. **Priority 2**: Never-quizzed entities (new knowledge)
+3. **Priority 1**: Overdue entities (correct but interval elapsed)
+
+Spaced repetition intervals:
+- Correct: interval doubles (1 → 2 → 4 → 8 → 16 → ... → max 90 days)
+- Incorrect: interval resets to 1 day
+- Interleaving: different entity types are mixed to strengthen pattern recognition
+
 ### Community Detection
 
 Cluster Entities into 3 hierarchy levels using the GDS Leiden algorithm.
@@ -208,11 +249,12 @@ Output:
 |---|---|---|
 | Document | Source document | id, title, source_path, file_type, embedding |
 | Chunk | Text fragment | id, text, chunk_index, token_estimate, embedding |
-| Entity | Extracted entity | id, name, type, description, embedding |
+| Entity | Extracted entity | id, name, type, description, embedding, last_quiz_date*, correct_count*, incorrect_count*, quiz_interval_days* |
 | Community | Entity cluster | id, level, title, summary, rank, embedding |
 | Note | Direct knowledge input (memo, fact) | id, text, author, embedding |
 | WebSource | URL-based information | id, url, title, reliability, embedding |
 | Conversation | Info from people/meetings | id, text, speaker, date, context, embedding |
+| QuizResult | Spaced repetition quiz result | id, entity_name, question, user_answer, is_correct, score, feedback |
 
 ### Relationships
 
@@ -225,8 +267,11 @@ Output:
 | SOURCED_FROM | Entity → Source node | Provenance: which source contributed the entity (Document, Note, WebSource, Conversation) |
 | BELONGS_TO | Entity → Community | Community membership |
 | CHILD_OF | Community → Community | Hierarchy (fine → coarse) |
+| QUIZ_RESULT_FOR | QuizResult → Entity | Links quiz result to the tested entity |
 
 Project-specific relationships can be added as needed.
+
+\* Quiz properties on Entity are added dynamically when the entity is first quizzed.
 
 ## Embedding Model
 

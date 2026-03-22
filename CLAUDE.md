@@ -43,6 +43,11 @@ python scripts/community_detection.py -p <project>
 # Render PDF pages to PNG (visual-extract preprocessing)
 python scripts/render_pages.py /path/to/file.pdf -o /tmp/output_dir
 
+# Spaced repetition quiz
+python scripts/quiz.py select -p <project> -k 5 --topic "topic"
+python scripts/quiz.py record -p <project> --json '{"entity_name":"...","is_correct":true,"question":"...","user_answer":"...","score":1.0,"feedback":"..."}'
+python scripts/quiz.py stats -p <project>
+
 # Tests
 python -m pytest tests/ -v
 ```
@@ -59,6 +64,7 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **scripts/render_pages.py** — Renders each PDF page as PNG (via pymupdf). Preprocessing step for the `/visual-extract` skill. Users must convert PPTX etc. to PDF beforehand
 - **scripts/add_knowledge.py** — Direct knowledge input without document files. Creates dynamic source nodes (Note, WebSource, Conversation, or any custom label) with entities and SOURCED_FROM links. Label and property keys are validated (alphanumeric only) to prevent Cypher injection
 - **scripts/graph_search.py** — Hybrid search: vector similarity for seed nodes + graph traversal (RELATES_TO, BELONGS_TO, MENTIONS, SOURCED_FROM) for context expansion. Returns structured results with provenance
+- **scripts/quiz.py** — Spaced repetition quiz system. `select` picks entities due for review (prioritizes incorrect/overdue/never-quizzed; supports topic filtering via vector similarity). `record` saves QuizResult nodes and updates Entity spaced repetition properties (last_quiz_date, correct_count, incorrect_count, quiz_interval_days). `stats` shows overall quiz statistics. Interval doubles on correct (max 90 days), resets to 1 day on incorrect
 
 ## Key Conventions (rules to follow when modifying code)
 
@@ -70,4 +76,5 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **Entity extraction**: When using `/ingest` or `/visual-extract` skills, Claude Code extracts entities itself (no API key needed). `extract_entities.py` remains as an optional standalone tool for non-Claude-Code usage
 - **Orphan cleanup**: `auto_ingest.py` automatically removes Entities not referenced by any Chunk (via MENTIONS) after both upsert and delete operations. Entities shared across documents are safe as long as any Chunk still mentions them
 - **Dynamic source nodes**: `/add-knowledge` creates source nodes with any label (Note, WebSource, Conversation, etc.). Label and property keys must be alphanumeric (validated to prevent Cypher injection)
+- **Quiz system**: QuizResult nodes link to Entity via QUIZ_RESULT_FOR. Entity spaced repetition properties: `last_quiz_date`, `correct_count`, `incorrect_count`, `quiz_interval_days`. Topic filtering uses vector similarity threshold > 0.80
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`
