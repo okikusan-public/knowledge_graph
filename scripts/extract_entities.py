@@ -157,7 +157,8 @@ def save_entities_to_graph(driver, cfg, doc_id, entities, relationships):
                     e.id = $id,
                     e.type = $type,
                     e.description = $description,
-                    e.embedding = $embedding
+                    e.embedding = $embedding,
+                    e.status = 'active'
                 ON MATCH SET
                     e.type = CASE WHEN e.type IS NULL THEN $type ELSE e.type END,
                     e.description = CASE WHEN e.description IS NULL

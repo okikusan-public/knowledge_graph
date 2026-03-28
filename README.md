@@ -18,6 +18,7 @@ knowledge_graph/
 │   ├── community_detection.py       # GDS Leiden 3-level community detection
 │   ├── embed_existing.py            # Batch-assign embeddings to existing nodes
 │   ├── graph_search.py              # Vector search + graph traversal hybrid
+│   ├── archive_entity.py            # Entity archive management (archive/restore/list)
 │   ├── quiz.py                      # Spaced repetition quiz system
 │   ├── render_pages.py              # PDF → per-page PNG (visual-extract preprocessing)
 │   └── vector_search.py             # Vector similarity search CLI
@@ -125,6 +126,7 @@ python scripts/vector_search.py "search query" -p <project>              # Searc
 python scripts/vector_search.py "search query" -p <project> -t entity    # Search Entities
 python scripts/vector_search.py "search query" -p <project> -t community # Search Communities
 python scripts/vector_search.py "search query" -p <project> -k 10       # Top 10 results
+python scripts/vector_search.py "search query" -p <project> -t entity --all  # Include archived
 ```
 
 ### Graph Search (Vector + Graph Traversal)
@@ -221,6 +223,29 @@ Spaced repetition intervals:
 - Incorrect: interval resets to 1 day
 - Interleaving: different entity types are mixed to strengthen pattern recognition
 
+### Entity Archive
+
+Archive entities to exclude them from search and quiz while preserving graph relationships.
+
+```bash
+# Archive an entity
+python scripts/archive_entity.py archive "Entity Name" -p <project>
+python scripts/archive_entity.py archive "Entity Name" -p <project> --reason "Completed"
+
+# Restore an archived entity
+python scripts/archive_entity.py restore "Entity Name" -p <project>
+
+# List archived entities
+python scripts/archive_entity.py list -p <project>
+```
+
+Archived entities are excluded from:
+- Vector search (default; use `--all` to include)
+- Graph search seed selection
+- Quiz entity selection
+
+Archived entities remain visible when discovered via graph traversal (RELATES_TO) with an `[archived]` marker.
+
 ### Community Detection
 
 Cluster Entities into 3 hierarchy levels using the GDS Leiden algorithm.
@@ -249,7 +274,7 @@ Output:
 |---|---|---|
 | Document | Source document | id, title, source_path, file_type, embedding |
 | Chunk | Text fragment | id, text, chunk_index, token_estimate, embedding |
-| Entity | Extracted entity | id, name, type, description, embedding, last_quiz_date*, correct_count*, incorrect_count*, quiz_interval_days* |
+| Entity | Extracted entity | id, name, type, description, embedding, status*, archived_date*, archive_reason*, last_quiz_date*, correct_count*, incorrect_count*, quiz_interval_days* |
 | Community | Entity cluster | id, level, title, summary, rank, embedding |
 | Note | Direct knowledge input (memo, fact) | id, text, author, embedding |
 | WebSource | URL-based information | id, url, title, reliability, embedding |
@@ -271,7 +296,7 @@ Output:
 
 Project-specific relationships can be added as needed.
 
-\* Quiz properties on Entity are added dynamically when the entity is first quizzed.
+\* Status/archive properties on Entity are set on creation (`status = 'active'`) and managed via `archive_entity.py`. Quiz properties are added dynamically when the entity is first quizzed.
 
 ## Embedding Model
 

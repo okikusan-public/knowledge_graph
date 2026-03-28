@@ -32,10 +32,11 @@ def get_query_embedding(cfg, text):
 
 def vector_search_seeds(session, query_vec, top_k=3):
     """Find seed entities and chunks via vector similarity."""
-    # Search entities
+    # Search entities (exclude archived)
     entities = session.run("""
         MATCH (e:Entity)
         WHERE e.embedding IS NOT NULL
+          AND coalesce(e.status, 'active') = 'active'
         WITH e, gds.similarity.cosine(e.embedding, $vec) AS score
         ORDER BY score DESC
         LIMIT $k
@@ -70,13 +71,14 @@ def expand_entities(session, entity_names, max_related=10):
     if not entity_names:
         return [], []
 
-    # Related entities via RELATES_TO
+    # Related entities via RELATES_TO (include archived with status)
     related = session.run("""
         MATCH (e:Entity)-[r:RELATES_TO]-(related:Entity)
         WHERE e.name IN $names AND NOT related.name IN $names
         RETURN DISTINCT related.name AS name, related.type AS type,
                related.description AS description,
-               r.type AS rel_type, e.name AS from_entity
+               r.type AS rel_type, e.name AS from_entity,
+               coalesce(related.status, 'active') AS status
         LIMIT $limit
     """, names=entity_names, limit=max_related).data()
 
@@ -136,6 +138,7 @@ def graph_search(cfg, query_text, top_k=3, max_related=10, max_chunks=10):
             chunk_entities = session.run("""
                 MATCH (c:Chunk)-[:MENTIONS]->(e:Entity)
                 WHERE c.id IN $ids
+                  AND coalesce(e.status, 'active') = 'active'
                 RETURN DISTINCT e.name AS name
             """, ids=chunk_ids).data()
             for ce in chunk_entities:
@@ -192,7 +195,8 @@ def format_results(results):
     if results["related_entities"]:
         lines.append("\n=== Related Entities (graph expansion) ===")
         for r in results["related_entities"]:
-            lines.append(f"  {r['name']} ({r['type']}) --[{r['rel_type']}]--> {r['from_entity']}")
+            archived_mark = " [archived]" if r.get("status") == "archived" else ""
+            lines.append(f"  {r['name']} ({r['type']}){archived_mark} --[{r['rel_type']}]--> {r['from_entity']}")
             if r.get("description"):
                 lines.append(f"    {r['description'][:150]}")
 

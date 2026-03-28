@@ -81,6 +81,7 @@ def select_entities(cfg, k=5, topic=None):
                     MATCH (e:Entity)
                     WHERE e.description IS NOT NULL AND e.description <> ''
                       AND e.embedding IS NOT NULL
+                      AND coalesce(e.status, 'active') = 'active'
                     WITH e,
                          coalesce(e.correct_count, 0) AS cc,
                          coalesce(e.incorrect_count, 0) AS ic,
@@ -120,6 +121,7 @@ def select_entities(cfg, k=5, topic=None):
                 result = session.run("""
                     MATCH (e:Entity)
                     WHERE e.description IS NOT NULL AND e.description <> ''
+                      AND coalesce(e.status, 'active') = 'active'
                     WITH e,
                          coalesce(e.correct_count, 0) AS cc,
                          coalesce(e.incorrect_count, 0) AS ic,
@@ -288,6 +290,7 @@ def get_stats(cfg):
             result = session.run("""
                 MATCH (e:Entity)
                 WHERE e.last_quiz_date IS NOT NULL
+                  AND coalesce(e.status, 'active') = 'active'
                 WITH e,
                      coalesce(e.correct_count, 0) AS cc,
                      coalesce(e.incorrect_count, 0) AS ic,
@@ -312,6 +315,7 @@ def get_stats(cfg):
                 MATCH (e:Entity)
                 WHERE e.last_quiz_date IS NULL
                   AND e.description IS NOT NULL AND e.description <> ''
+                  AND coalesce(e.status, 'active') = 'active'
                 RETURN count(e) AS never_quizzed
             """)
             row2 = result2.single()

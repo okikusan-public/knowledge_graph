@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_config
 
 
-def search(cfg, query_text, node_type="chunk", top_k=5):
+def search(cfg, query_text, node_type="chunk", top_k=5, include_archived=False):
     """ベクトル類似度検索"""
     # query用プレフィックス
     resp = requests.post(cfg.embed_url, json={"inputs": f"query: {query_text}"}, timeout=30)
@@ -37,20 +37,33 @@ def search(cfg, query_text, node_type="chunk", top_k=5):
     }
     label = label_map.get(node_type.lower(), "Chunk")
 
+    # Entity検索時、デフォルトでアーカイブ除外
+    filter_archived = node_type.lower() == "entity" and not include_archived
+
     with driver.session() as session:
         # vector indexがある場合はそちらを使う
         try:
             index_name = f"{node_type.lower()}_embeddings"
-            results = session.run(f"""
-                CALL db.index.vector.queryNodes('{index_name}', $k, $vec)
-                YIELD node, score
-                RETURN node, score
-            """, k=top_k, vec=query_vec).data()
+            if filter_archived:
+                results = session.run(f"""
+                    CALL db.index.vector.queryNodes('{index_name}', $k_over, $vec)
+                    YIELD node, score
+                    WHERE coalesce(node.status, 'active') = 'active'
+                    RETURN node, score
+                    LIMIT $k
+                """, k=top_k, k_over=top_k * 3, vec=query_vec).data()
+            else:
+                results = session.run(f"""
+                    CALL db.index.vector.queryNodes('{index_name}', $k, $vec)
+                    YIELD node, score
+                    RETURN node, score
+                """, k=top_k, vec=query_vec).data()
         except Exception:
             # vector indexがない場合はbrute force cosine similarity
+            status_filter = "AND coalesce(n.status, 'active') = 'active'" if filter_archived else ""
             results = session.run(f"""
                 MATCH (n:{label})
-                WHERE n.embedding IS NOT NULL
+                WHERE n.embedding IS NOT NULL {status_filter}
                 WITH n, gds.similarity.cosine(n.embedding, $vec) AS score
                 ORDER BY score DESC
                 LIMIT $k
@@ -68,13 +81,16 @@ def main():
     parser.add_argument("--type", "-t", default="chunk",
                         choices=["chunk", "entity", "community", "document"])
     parser.add_argument("--top", "-k", type=int, default=5)
+    parser.add_argument("--all", action="store_true",
+                        help="Include archived entities in results")
     args = parser.parse_args()
 
     cfg = get_config(args.project)
     print(f"[{cfg.project}] Searching {args.type}s for: \"{args.query}\"")
     print("-" * 60)
 
-    results = search(cfg, args.query, args.type, args.top)
+    results = search(cfg, args.query, args.type, args.top,
+                      include_archived=getattr(args, 'all', False))
 
     for i, r in enumerate(results, 1):
         node = r["node"]
@@ -85,7 +101,8 @@ def main():
             print(f"{i}. [{score:.4f}] {node.get('chunk_id', node.get('id', ''))}")
             print(f"   {text}...")
         elif args.type == "entity":
-            print(f"{i}. [{score:.4f}] {node.get('name', '')}")
+            archived_mark = " [archived]" if node.get("status") == "archived" else ""
+            print(f"{i}. [{score:.4f}] {node.get('name', '')}{archived_mark}")
             print(f"   {node.get('description', '')[:200]}")
         elif args.type == "community":
             print(f"{i}. [{score:.4f}] L{node.get('level', '?')} {node.get('title', '')}")
