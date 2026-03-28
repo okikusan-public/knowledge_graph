@@ -289,11 +289,12 @@ def extract_text(file_path):
 
 
 def cleanup_orphan_entities(driver):
-    """どのChunkからもMENTIONSされていない孤立Entityを削除"""
+    """どのChunkからもMENTIONSされず、どのソースノードへもSOURCED_FROMしていない孤立Entityを削除"""
     with driver.session() as session:
         result = session.run("""
             MATCH (e:Entity)
             WHERE NOT (e)<-[:MENTIONS]-(:Chunk)
+              AND NOT (e)-[:SOURCED_FROM]->()
             WITH e, e.name AS name
             DETACH DELETE e
             RETURN count(*) AS deleted, collect(name) AS names

@@ -327,6 +327,34 @@ class TestOrphanCleanup(unittest.TestCase):
 
         _cleanup_test_data(self.driver, [path])
 
+    def test_sourced_from_entity_not_removed(self):
+        """Entity with SOURCED_FROM relationship (via add_knowledge) is NOT removed by cleanup."""
+        note_id = str(uuid.uuid4())
+        entity_id = str(uuid.uuid4())
+        # Create a Note and Entity with SOURCED_FROM (simulating add_knowledge.py)
+        with self.driver.session() as s:
+            s.run("""
+                CREATE (n:Note {id: $note_id, text: 'Test note for orphan cleanup'})
+                CREATE (e:Entity {id: $entity_id, name: 'TEST_SourcedFrom', type: 'CONCEPT',
+                        description: 'Should survive cleanup because of SOURCED_FROM'})
+                CREATE (e)-[:SOURCED_FROM]->(n)
+            """, note_id=note_id, entity_id=entity_id)
+
+        cleanup_orphan_entities(self.driver)
+
+        with self.driver.session() as s:
+            result = s.run(
+                "MATCH (e:Entity {name: 'TEST_SourcedFrom'}) RETURN count(e) AS c"
+            ).single()
+            self.assertEqual(result["c"], 1, "Entity with SOURCED_FROM should NOT be removed")
+
+        # Cleanup test data
+        with self.driver.session() as s:
+            s.run("""
+                MATCH (e:Entity {name: 'TEST_SourcedFrom'}) DETACH DELETE e
+            """)
+            s.run("MATCH (n:Note {id: $id}) DETACH DELETE n", id=note_id)
+
 
 class TestSaveEntitiesCLI(unittest.TestCase):
     """Test save_entities.py CLI via subprocess."""
