@@ -145,7 +145,7 @@ def save_entities_to_graph(driver, cfg, doc_id, entities, relationships):
         return 0, 0
 
     # Get embeddings for all entities
-    entity_texts = [f"{e['name']}。{e.get('description', '')}" for e in unique_entities]
+    entity_texts = [f"{e['name']}. {e.get('description', '')}" for e in unique_entities]
     embeddings = get_embeddings_batch(cfg, entity_texts)
 
     with driver.session() as session:

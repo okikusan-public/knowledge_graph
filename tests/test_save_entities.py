@@ -22,6 +22,7 @@ from save_entities import (
     query_existing_entities,
     save_entities_to_graph,
     get_embeddings_batch,
+    normalize_relationships,
 )
 from auto_ingest import cleanup_orphan_entities
 
@@ -354,6 +355,43 @@ class TestOrphanCleanup(unittest.TestCase):
                 MATCH (e:Entity {name: 'TEST_SourcedFrom'}) DETACH DELETE e
             """)
             s.run("MATCH (n:Note {id: $id}) DETACH DELETE n", id=note_id)
+
+
+class TestNormalizeRelationships(unittest.TestCase):
+    """Test relationship key normalization."""
+
+    def test_from_to_converted_to_source_target(self):
+        """from/to keys are normalized to source/target."""
+        rels = [{"from": "A", "to": "B", "type": "uses"}]
+        result = normalize_relationships(rels)
+        self.assertEqual(result[0]["source"], "A")
+        self.assertEqual(result[0]["target"], "B")
+        self.assertNotIn("from", result[0])
+        self.assertNotIn("to", result[0])
+
+    def test_source_target_unchanged(self):
+        """source/target keys are passed through unchanged."""
+        rels = [{"source": "A", "target": "B", "type": "uses"}]
+        result = normalize_relationships(rels)
+        self.assertEqual(result[0]["source"], "A")
+        self.assertEqual(result[0]["target"], "B")
+
+    def test_source_takes_precedence_over_from(self):
+        """If both source and from are present, source wins."""
+        rels = [{"source": "A", "from": "X", "target": "B", "type": "uses"}]
+        result = normalize_relationships(rels)
+        self.assertEqual(result[0]["source"], "A")
+
+    def test_empty_list(self):
+        """Empty list returns empty list."""
+        self.assertEqual(normalize_relationships([]), [])
+
+    def test_preserves_other_fields(self):
+        """type and description are preserved during normalization."""
+        rels = [{"from": "A", "to": "B", "type": "manages", "description": "A manages B"}]
+        result = normalize_relationships(rels)
+        self.assertEqual(result[0]["type"], "manages")
+        self.assertEqual(result[0]["description"], "A manages B")
 
 
 class TestSaveEntitiesCLI(unittest.TestCase):

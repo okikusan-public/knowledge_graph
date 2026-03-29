@@ -41,6 +41,23 @@ def get_driver(cfg):
     return GraphDatabase.driver(cfg.neo4j_uri, auth=cfg.neo4j_auth)
 
 
+def normalize_relationships(relationships):
+    """Normalize relationship key names: from/to → source/target."""
+    normalized = []
+    for rel in relationships:
+        r = dict(rel)
+        if "from" in r and "source" not in r:
+            r["source"] = r.pop("from")
+            print("  [warn] relationship key 'from' is deprecated, use 'source'",
+                  file=sys.stderr)
+        if "to" in r and "target" not in r:
+            r["target"] = r.pop("to")
+            print("  [warn] relationship key 'to' is deprecated, use 'target'",
+                  file=sys.stderr)
+        normalized.append(r)
+    return normalized
+
+
 def get_embeddings_batch(cfg, texts):
     """Get embeddings for a batch of texts."""
     if not texts:
@@ -160,7 +177,7 @@ def main():
         data = json.load(sys.stdin)
 
     entities = data.get("entities", [])
-    relationships = data.get("relationships", [])
+    relationships = normalize_relationships(data.get("relationships", []))
 
     if not entities:
         print("  [skip] No entities to save", file=sys.stderr)
