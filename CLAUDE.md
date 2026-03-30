@@ -40,6 +40,10 @@ python scripts/graph_search.py "search query" -p <project> -k 3 --json
 # Community detection
 python scripts/community_detection.py -p <project>
 
+# Cross-document relationship discovery
+python scripts/discover_relationships.py -p <project> --all
+python scripts/discover_relationships.py -p <project> --all --threshold 0.90 --dry-run
+
 # Render PDF pages to PNG (visual-extract preprocessing)
 python scripts/render_pages.py /path/to/file.pdf -o /tmp/output_dir
 
@@ -72,6 +76,7 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **scripts/graph_search.py** — Hybrid search: vector similarity for seed nodes + graph traversal (RELATES_TO, BELONGS_TO, MENTIONS, SOURCED_FROM) for context expansion. Returns structured results with provenance
 - **scripts/quiz.py** — Spaced repetition quiz system. `select` picks entities due for review (prioritizes incorrect/overdue/never-quizzed; supports topic filtering via vector similarity). `record` saves QuizResult nodes and updates Entity spaced repetition properties (last_quiz_date, correct_count, incorrect_count, quiz_interval_days). `stats` shows overall quiz statistics. Interval doubles on correct (max 90 days), resets to 1 day on incorrect
 - **scripts/archive_entity.py** — Entity archive management. `archive` sets status to archived, `restore` restores to active, `list` shows all archived entities. Archived entities are excluded from search seeds and quiz but visible during graph traversal with `[archived]` mark
+- **scripts/discover_relationships.py** — Auto-discovers RELATES_TO relationships between entities from different documents using embedding cosine similarity. Threshold configurable (default 0.85). Runs automatically after entity save via hook
 
 ## Key Conventions (rules to follow when modifying code)
 
@@ -85,4 +90,5 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **Dynamic source nodes**: `/add-knowledge` creates source nodes with any label (Note, WebSource, Conversation, etc.). Label and property keys must be alphanumeric (validated to prevent Cypher injection)
 - **Quiz system**: QuizResult nodes link to Entity via QUIZ_RESULT_FOR. Entity spaced repetition properties: `last_quiz_date`, `correct_count`, `incorrect_count`, `quiz_interval_days`. Topic filtering uses vector similarity threshold > 0.80
 - **Entity status**: Entities have `status` property (`active`/`archived`). Default is `active`. Archived entities are excluded from search seeds and quiz selection but visible during graph traversal (marked `[archived]`). Use `archive_entity.py` for archive/restore operations. `coalesce(e.status, 'active')` handles backward compatibility with entities that lack the property
+- **Cross-document relationship discovery**: `discover_relationships.py` creates RELATES_TO with `type = "auto_discovered"`. Uses MERGE to prevent duplicates. Only considers entity pairs from different source documents. Respects archived entity status. Default similarity threshold is 0.85
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`
