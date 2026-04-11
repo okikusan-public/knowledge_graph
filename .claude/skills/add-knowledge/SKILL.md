@@ -75,7 +75,7 @@ If conflicts exist, present them to the user and resolve before saving.
 Pipe the structured JSON to `add_knowledge.py`:
 
 ```bash
-cat <<'KNOWLEDGE_JSON' | python ${CLAUDE_SKILL_DIR}/../../../scripts/add_knowledge.py $1 $2
+cat <<'KNOWLEDGE_JSON' | python ${CLAUDE_SKILL_DIR}/../../../scripts/add_knowledge.py -p $1
 {
   "source": {
     "label": "Note",
