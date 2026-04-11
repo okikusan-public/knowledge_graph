@@ -47,6 +47,13 @@ python scripts/discover_relationships.py -p <project> --all --threshold 0.90 --d
 # Render PDF pages to PNG (visual-extract preprocessing)
 python scripts/render_pages.py /path/to/file.pdf -o /tmp/output_dir
 
+# PDF to structured Markdown (preserves tables, headings)
+python scripts/pdf_markitdown.py /path/to/file.pdf
+python scripts/pdf_markitdown.py /path/to/file.pdf -o output.md
+
+# Full PDF ingestion pipeline (markitdown → ingest → entity extraction → save)
+./scripts/ingest_pipeline.sh /path/to/file.pdf -p <project>
+
 # Spaced repetition quiz
 python scripts/quiz.py select -p <project> -k 5 --topic "topic"
 python scripts/quiz.py record -p <project> --json '{"entity_name":"...","is_correct":true,"question":"...","user_answer":"...","score":1.0,"feedback":"..."}'
@@ -62,7 +69,7 @@ python scripts/archive_entity.py list -p <project>
 python -m pytest tests/ -v
 ```
 
-Python deps: `pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx anthropic`
+Python deps: `pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx anthropic 'markitdown[pdf]'`
 
 ## Architecture
 
@@ -77,6 +84,8 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **scripts/quiz.py** — Spaced repetition quiz system. `select` picks entities due for review (prioritizes incorrect/overdue/never-quizzed; supports topic filtering via vector similarity). `record` saves QuizResult nodes and updates Entity spaced repetition properties (last_quiz_date, correct_count, incorrect_count, quiz_interval_days). `stats` shows overall quiz statistics. Interval doubles on correct (max 90 days), resets to 1 day on incorrect
 - **scripts/archive_entity.py** — Entity archive management. `archive` sets status to archived, `restore` restores to active, `list` shows all archived entities. Archived entities are excluded from search seeds and quiz but visible during graph traversal with `[archived]` mark
 - **scripts/discover_relationships.py** — Auto-discovers RELATES_TO relationships between entities from different documents using embedding cosine similarity. Threshold configurable (default 0.85). Runs automatically after entity save via hook
+- **scripts/pdf_markitdown.py** — Converts PDF (or DOCX/PPTX/XLSX) to structured Markdown using Microsoft markitdown. Preserves tables, headings, and formatting that plain-text extraction loses. Outputs `{stem}_markitdown.md`
+- **scripts/ingest_pipeline.sh** — Fully automated pipeline: markitdown conversion → auto_ingest (chunk + embed) → entity extraction (via `claude --print`) → save_entities → community detection. For headless/batch ingestion
 
 ## Key Conventions (rules to follow when modifying code)
 
@@ -91,4 +100,5 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **Quiz system**: QuizResult nodes link to Entity via QUIZ_RESULT_FOR. Entity spaced repetition properties: `last_quiz_date`, `correct_count`, `incorrect_count`, `quiz_interval_days`. Topic filtering uses vector similarity threshold > 0.80
 - **Entity status**: Entities have `status` property (`active`/`archived`). Default is `active`. Archived entities are excluded from search seeds and quiz selection but visible during graph traversal (marked `[archived]`). Use `archive_entity.py` for archive/restore operations. `coalesce(e.status, 'active')` handles backward compatibility with entities that lack the property
 - **Cross-document relationship discovery**: `discover_relationships.py` creates RELATES_TO with `type = "auto_discovered"`. Uses MERGE to prevent duplicates. Only considers entity pairs from different source documents. Respects archived entity status. Default similarity threshold is 0.85
+- **Markitdown conversion**: Output files follow `{original_stem}_markitdown.md` naming convention (parallels `_visual_extract.md`). Use for PDFs with tables, structured headings, or complex formatting. The `/pdf-markitdown` skill defaults to interactive entity extraction; pass `--auto` for fully automated pipeline via `ingest_pipeline.sh`
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`

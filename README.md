@@ -20,11 +20,14 @@ knowledge_graph/
 │   ├── graph_search.py              # Vector search + graph traversal hybrid
 │   ├── archive_entity.py            # Entity archive management (archive/restore/list)
 │   ├── quiz.py                      # Spaced repetition quiz system
+│   ├── pdf_markitdown.py             # PDF → structured Markdown (via markitdown)
+│   ├── ingest_pipeline.sh           # Full automation: markitdown → ingest → entities
 │   ├── render_pages.py              # PDF → per-page PNG (visual-extract preprocessing)
 │   └── vector_search.py             # Vector similarity search CLI
 └── tests/
     ├── test_render_pages.py         # Unit tests for render_pages.py
     ├── test_save_entities.py        # Integration tests for entity saving & conflicts
+    ├── test_pdf_markitdown.py       # Unit + integration tests for markitdown conversion
     └── test_graph_search.py         # Integration tests for graph traversal search
 ```
 
@@ -71,7 +74,7 @@ volumes:
 ### 3. Python Dependencies
 
 ```bash
-pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx
+pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx 'markitdown[pdf]'
 ```
 
 ## Usage
@@ -164,6 +167,25 @@ Processing pipeline:
 2. Read each image one at a time via Claude's vision (prevents context overflow)
 3. Extract text, diagrams, OCR, and layout info into `{original_name}_visual_extract.md`
 4. Optionally ingest into the knowledge graph via `auto_ingest.py`
+
+### PDF Markitdown Conversion
+
+For PDFs with tables, headings, and structured formatting, use markitdown for higher-fidelity text extraction before ingestion.
+
+```bash
+# Convert PDF to structured Markdown
+python scripts/pdf_markitdown.py /path/to/file.pdf
+python scripts/pdf_markitdown.py /path/to/file.pdf -o custom_output.md
+
+# Full automated pipeline (convert + ingest + extract entities + save)
+./scripts/ingest_pipeline.sh /path/to/file.pdf -p <project>
+
+# Via Claude Code skill (interactive entity extraction)
+/pdf-markitdown report.pdf
+/pdf-markitdown report.pdf --auto   # fully automated
+```
+
+Requires: `pip install 'markitdown[pdf]'`
 
 ### Direct Knowledge Input
 
