@@ -22,6 +22,7 @@ knowledge_graph/
 │   ├── quiz.py                      # Spaced repetition quiz system
 │   ├── pdf_markitdown.py             # PDF → structured Markdown (via markitdown)
 │   ├── youtube_markitdown.py        # YouTube → structured Markdown (metadata + transcript)
+│   ├── x_search.py                  # X (Twitter) search via Grok API → Markdown
 │   ├── ingest_pipeline.sh           # Full automation: markitdown → ingest → entities
 │   ├── render_pages.py              # PDF → per-page PNG (visual-extract preprocessing)
 │   └── vector_search.py             # Vector similarity search CLI
@@ -30,6 +31,7 @@ knowledge_graph/
     ├── test_save_entities.py        # Integration tests for entity saving & conflicts
     ├── test_pdf_markitdown.py       # Unit + integration tests for markitdown conversion
     ├── test_youtube_markitdown.py   # Unit + integration tests for YouTube conversion
+    ├── test_x_search.py              # Unit + integration tests for X search
     └── test_graph_search.py         # Integration tests for graph traversal search
 ```
 
@@ -76,7 +78,7 @@ volumes:
 ### 3. Python Dependencies
 
 ```bash
-pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx 'markitdown[pdf]' youtube-transcript-api
+pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx 'markitdown[pdf]' youtube-transcript-api openai
 ```
 
 ## Usage
@@ -212,6 +214,29 @@ Supported URL formats: `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/embed/`
 Output is saved to `docs/youtube_{video_id}_markitdown.md`. Default transcript languages: Japanese, English (`--lang` to override).
 
 Requires: `pip install youtube-transcript-api` (without it, only metadata and description are extracted)
+
+### X (Twitter) Search via Grok API
+
+Search X (Twitter) posts using xAI's Grok API and save results as structured Markdown for knowledge graph ingestion.
+
+```bash
+# Basic search (last 7 days)
+python scripts/x_search.py "AI agent frameworks"
+
+# Search with date range and handle filter
+python scripts/x_search.py "product launch" --days 30 --handles elonmusk,openai
+
+# Search with web context and custom output
+python scripts/x_search.py "knowledge graphs" --web-search -o docs/custom_output.md
+
+# Via Claude Code skill (interactive search → review → ingest → entity extraction)
+/x-search "AI agent frameworks"
+/x-search "product launch" --days 30 --handles elonmusk,openai --project project_a
+```
+
+Requires: `pip install openai` and `XAI_API_KEY` environment variable (get key at https://console.x.ai/).
+
+Output is saved to `docs/x_search_{query}_{date}.md`. The `/x-search` skill is always interactive (no `--auto` mode) due to per-search API costs (~$0.02/search).
 
 ### Direct Knowledge Input
 

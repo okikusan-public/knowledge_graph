@@ -55,6 +55,11 @@ python scripts/pdf_markitdown.py /path/to/file.pdf -o output.md
 python scripts/youtube_markitdown.py "https://www.youtube.com/watch?v=VIDEO_ID"
 python scripts/youtube_markitdown.py "https://youtu.be/VIDEO_ID" -o output.md --lang ja en
 
+# X (Twitter) search via Grok API (requires XAI_API_KEY)
+python scripts/x_search.py "search query" --days 7
+python scripts/x_search.py "search query" --handles user1,user2 -o output.md
+python scripts/x_search.py "search query" --web-search
+
 # Full ingestion pipeline (markitdown → ingest → entity extraction → save)
 ./scripts/ingest_pipeline.sh /path/to/file.pdf -p <project>
 ./scripts/ingest_pipeline.sh "https://www.youtube.com/watch?v=VIDEO_ID" -p <project>
@@ -74,7 +79,7 @@ python scripts/archive_entity.py list -p <project>
 python -m pytest tests/ -v
 ```
 
-Python deps: `pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx anthropic 'markitdown[pdf]' youtube-transcript-api`
+Python deps: `pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx anthropic 'markitdown[pdf]' youtube-transcript-api openai`
 
 ## Architecture
 
@@ -91,6 +96,7 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **scripts/discover_relationships.py** — Auto-discovers RELATES_TO relationships between entities from different documents using embedding cosine similarity. Threshold configurable (default 0.85). Runs automatically after entity save via hook
 - **scripts/pdf_markitdown.py** — Converts PDF (or DOCX/PPTX/XLSX) to structured Markdown using Microsoft markitdown. Preserves tables, headings, and formatting that plain-text extraction loses. Outputs `{stem}_markitdown.md`
 - **scripts/youtube_markitdown.py** — Converts YouTube video to structured Markdown using markitdown. Extracts metadata (title, keywords, runtime), description, and transcript (if `youtube-transcript-api` installed). Outputs `docs/youtube_{video_id}_markitdown.md`. Supports multiple URL formats (youtube.com, youtu.be, embed, mobile)
+- **scripts/x_search.py** — Searches X (Twitter) posts via xAI's Grok API using the OpenAI SDK. Supports date range filtering (`--days`), handle filtering (`--handles`/`--exclude-handles`), optional web search (`--web-search`), and model selection. Outputs structured Markdown to `docs/x_search_{query}_{date}.md`. Requires `XAI_API_KEY` env var and `openai` package
 - **scripts/ingest_pipeline.sh** — Fully automated pipeline: markitdown conversion → auto_ingest (chunk + embed) → entity extraction (via `claude --print`) → save_entities → community detection. Accepts both file paths and YouTube URLs. For headless/batch ingestion
 
 ## Key Conventions (rules to follow when modifying code)
@@ -108,4 +114,5 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **Cross-document relationship discovery**: `discover_relationships.py` creates RELATES_TO with `type = "auto_discovered"`. Uses MERGE to prevent duplicates. Only considers entity pairs from different source documents. Respects archived entity status. Default similarity threshold is 0.85
 - **Markitdown conversion**: Output files follow `{original_stem}_markitdown.md` naming convention (parallels `_visual_extract.md`). Use for PDFs with tables, structured headings, or complex formatting. The `/pdf-markitdown` skill defaults to interactive entity extraction; pass `--auto` for fully automated pipeline via `ingest_pipeline.sh`
 - **YouTube markitdown**: Output files follow `docs/youtube_{video_id}_markitdown.md` naming convention. All YouTube URL formats are normalized to `https://www.youtube.com/watch?v={id}` before conversion (required by markitdown's YouTubeConverter). Default transcript languages are `["ja", "en"]`. Without `youtube-transcript-api`, only metadata and description are extracted (no transcript). The `/youtube-markitdown` skill follows the same Interactive/Automated pattern as `/pdf-markitdown`
+- **X search**: Output files follow `docs/x_search_{sanitized_query}_{date}.md` naming convention. Uses the `openai` package with custom `base_url="https://api.x.ai/v1"` (OpenAI SDK compatible). Default model is `grok-4-1-fast-non-reasoning` (cheapest). `web_search` tool is opt-in via `--web-search` flag. No automated pipeline mode due to per-search API costs (~$0.02/call). The `/x-search` skill is always interactive with user review before ingestion
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`
