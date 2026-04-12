@@ -1,6 +1,6 @@
 # knowledge_graph
 
-A centralized knowledge management platform that ingests documents into a Neo4j knowledge graph for unified search and discovery. Supports multiple file formats (.md, .txt, .csv, .pdf, .docx, .xlsx, .pptx) and provides vector similarity search, community detection, and visual content extraction via Claude's vision capabilities.
+A centralized knowledge management platform that ingests documents and media into a Neo4j knowledge graph for unified search and discovery. Supports multiple file formats (.md, .txt, .csv, .pdf, .docx, .xlsx, .pptx), YouTube videos (metadata + transcript), and provides vector similarity search, community detection, and visual content extraction via Claude's vision capabilities.
 
 ## Structure
 
@@ -21,6 +21,7 @@ knowledge_graph/
 │   ├── archive_entity.py            # Entity archive management (archive/restore/list)
 │   ├── quiz.py                      # Spaced repetition quiz system
 │   ├── pdf_markitdown.py             # PDF → structured Markdown (via markitdown)
+│   ├── youtube_markitdown.py        # YouTube → structured Markdown (metadata + transcript)
 │   ├── ingest_pipeline.sh           # Full automation: markitdown → ingest → entities
 │   ├── render_pages.py              # PDF → per-page PNG (visual-extract preprocessing)
 │   └── vector_search.py             # Vector similarity search CLI
@@ -28,6 +29,7 @@ knowledge_graph/
     ├── test_render_pages.py         # Unit tests for render_pages.py
     ├── test_save_entities.py        # Integration tests for entity saving & conflicts
     ├── test_pdf_markitdown.py       # Unit + integration tests for markitdown conversion
+    ├── test_youtube_markitdown.py   # Unit + integration tests for YouTube conversion
     └── test_graph_search.py         # Integration tests for graph traversal search
 ```
 
@@ -74,7 +76,7 @@ volumes:
 ### 3. Python Dependencies
 
 ```bash
-pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx 'markitdown[pdf]'
+pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx 'markitdown[pdf]' youtube-transcript-api
 ```
 
 ## Usage
@@ -186,6 +188,30 @@ python scripts/pdf_markitdown.py /path/to/file.pdf -o custom_output.md
 ```
 
 Requires: `pip install 'markitdown[pdf]'`
+
+### YouTube Markitdown Conversion
+
+Convert YouTube videos to structured Markdown (metadata, description, and transcript) for ingestion into the knowledge graph.
+
+```bash
+# Convert YouTube video to Markdown
+python scripts/youtube_markitdown.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python scripts/youtube_markitdown.py "https://youtu.be/VIDEO_ID" -o custom_output.md
+python scripts/youtube_markitdown.py "https://www.youtube.com/watch?v=VIDEO_ID" --lang en
+
+# Full automated pipeline (convert + ingest + extract entities + save)
+./scripts/ingest_pipeline.sh "https://www.youtube.com/watch?v=VIDEO_ID" -p <project>
+
+# Via Claude Code skill (interactive entity extraction)
+/youtube-markitdown https://www.youtube.com/watch?v=VIDEO_ID
+/youtube-markitdown https://www.youtube.com/watch?v=VIDEO_ID --auto
+```
+
+Supported URL formats: `youtube.com/watch?v=`, `youtu.be/`, `youtube.com/embed/`, `youtube.com/shorts/`, `youtube.com/live/`, `m.youtube.com/watch?v=`
+
+Output is saved to `docs/youtube_{video_id}_markitdown.md`. Default transcript languages: Japanese, English (`--lang` to override).
+
+Requires: `pip install youtube-transcript-api` (without it, only metadata and description are extracted)
 
 ### Direct Knowledge Input
 

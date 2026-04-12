@@ -51,8 +51,13 @@ python scripts/render_pages.py /path/to/file.pdf -o /tmp/output_dir
 python scripts/pdf_markitdown.py /path/to/file.pdf
 python scripts/pdf_markitdown.py /path/to/file.pdf -o output.md
 
-# Full PDF ingestion pipeline (markitdown → ingest → entity extraction → save)
+# YouTube to structured Markdown (metadata + transcript)
+python scripts/youtube_markitdown.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python scripts/youtube_markitdown.py "https://youtu.be/VIDEO_ID" -o output.md --lang ja en
+
+# Full ingestion pipeline (markitdown → ingest → entity extraction → save)
 ./scripts/ingest_pipeline.sh /path/to/file.pdf -p <project>
+./scripts/ingest_pipeline.sh "https://www.youtube.com/watch?v=VIDEO_ID" -p <project>
 
 # Spaced repetition quiz
 python scripts/quiz.py select -p <project> -k 5 --topic "topic"
@@ -69,7 +74,7 @@ python scripts/archive_entity.py list -p <project>
 python -m pytest tests/ -v
 ```
 
-Python deps: `pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx anthropic 'markitdown[pdf]'`
+Python deps: `pip install sentence-transformers neo4j requests pymupdf python-docx openpyxl python-pptx anthropic 'markitdown[pdf]' youtube-transcript-api`
 
 ## Architecture
 
@@ -85,7 +90,8 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **scripts/archive_entity.py** — Entity archive management. `archive` sets status to archived, `restore` restores to active, `list` shows all archived entities. Archived entities are excluded from search seeds and quiz but visible during graph traversal with `[archived]` mark
 - **scripts/discover_relationships.py** — Auto-discovers RELATES_TO relationships between entities from different documents using embedding cosine similarity. Threshold configurable (default 0.85). Runs automatically after entity save via hook
 - **scripts/pdf_markitdown.py** — Converts PDF (or DOCX/PPTX/XLSX) to structured Markdown using Microsoft markitdown. Preserves tables, headings, and formatting that plain-text extraction loses. Outputs `{stem}_markitdown.md`
-- **scripts/ingest_pipeline.sh** — Fully automated pipeline: markitdown conversion → auto_ingest (chunk + embed) → entity extraction (via `claude --print`) → save_entities → community detection. For headless/batch ingestion
+- **scripts/youtube_markitdown.py** — Converts YouTube video to structured Markdown using markitdown. Extracts metadata (title, keywords, runtime), description, and transcript (if `youtube-transcript-api` installed). Outputs `docs/youtube_{video_id}_markitdown.md`. Supports multiple URL formats (youtube.com, youtu.be, embed, mobile)
+- **scripts/ingest_pipeline.sh** — Fully automated pipeline: markitdown conversion → auto_ingest (chunk + embed) → entity extraction (via `claude --print`) → save_entities → community detection. Accepts both file paths and YouTube URLs. For headless/batch ingestion
 
 ## Key Conventions (rules to follow when modifying code)
 
@@ -101,4 +107,5 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **Entity status**: Entities have `status` property (`active`/`archived`). Default is `active`. Archived entities are excluded from search seeds and quiz selection but visible during graph traversal (marked `[archived]`). Use `archive_entity.py` for archive/restore operations. `coalesce(e.status, 'active')` handles backward compatibility with entities that lack the property
 - **Cross-document relationship discovery**: `discover_relationships.py` creates RELATES_TO with `type = "auto_discovered"`. Uses MERGE to prevent duplicates. Only considers entity pairs from different source documents. Respects archived entity status. Default similarity threshold is 0.85
 - **Markitdown conversion**: Output files follow `{original_stem}_markitdown.md` naming convention (parallels `_visual_extract.md`). Use for PDFs with tables, structured headings, or complex formatting. The `/pdf-markitdown` skill defaults to interactive entity extraction; pass `--auto` for fully automated pipeline via `ingest_pipeline.sh`
+- **YouTube markitdown**: Output files follow `docs/youtube_{video_id}_markitdown.md` naming convention. All YouTube URL formats are normalized to `https://www.youtube.com/watch?v={id}` before conversion (required by markitdown's YouTubeConverter). Default transcript languages are `["ja", "en"]`. Without `youtube-transcript-api`, only metadata and description are extracted (no transcript). The `/youtube-markitdown` skill follows the same Interactive/Automated pattern as `/pdf-markitdown`
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`

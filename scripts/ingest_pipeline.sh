@@ -1,17 +1,19 @@
 #!/bin/bash
-# Full PDF ingestion pipeline: markitdown → auto_ingest → entity extraction → save_entities
+# Full ingestion pipeline: markitdown → auto_ingest → entity extraction → save_entities
 #
 # Usage:
 #   ./scripts/ingest_pipeline.sh <input.pdf> [-p project]
+#   ./scripts/ingest_pipeline.sh "https://www.youtube.com/watch?v=ID" [-p project]
 #
 # Prerequisites:
 #   - markitdown[pdf] installed: pip install 'markitdown[pdf]'
 #   - claude CLI installed and authenticated
 #   - Embedding server running (docker compose up -d)
 #   - Neo4j running for the target project
+#   - (YouTube) youtube-transcript-api recommended: pip install youtube-transcript-api
 #
 # Steps:
-#   1. Convert PDF to structured Markdown via markitdown
+#   1. Convert input (PDF/YouTube) to structured Markdown via markitdown
 #   2. Upsert the Markdown into the knowledge graph (chunk + embed)
 #   3. Extract entities using claude --print (stdin)
 #   4. Save entities to the graph
@@ -41,9 +43,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$INPUT_FILE" ]]; then
-    echo "Usage: $0 <input file> [-p project]" >&2
+    echo "Usage: $0 <input file or YouTube URL> [-p project]" >&2
     echo "" >&2
-    echo "Supported formats: PDF, DOCX, PPTX, XLSX (any markitdown-supported format)" >&2
+    echo "Supported: PDF, DOCX, PPTX, XLSX, YouTube URLs" >&2
     exit 1
 fi
 
@@ -53,8 +55,11 @@ if ! command -v claude >/dev/null 2>&1; then
     exit 1
 fi
 
-# Resolve absolute path safely (avoid cd to non-existent directory)
-if [[ -f "$INPUT_FILE" ]]; then
+# Detect YouTube URL or resolve file path
+IS_YOUTUBE_URL=false
+if [[ "$INPUT_FILE" =~ ^https?://(www\.youtube\.com|youtube\.com|m\.youtube\.com|youtu\.be)/ ]]; then
+    IS_YOUTUBE_URL=true
+elif [[ -f "$INPUT_FILE" ]]; then
     INPUT_FILE="$(cd "$(dirname "$INPUT_FILE")" && pwd)/$(basename "$INPUT_FILE")"
 else
     echo "  [error] File not found: $INPUT_FILE" >&2
@@ -68,7 +73,11 @@ echo "========================================" >&2
 # --- Step 1: Convert to Markdown ---
 echo "" >&2
 echo "  [step 1/5] Converting to Markdown via markitdown..." >&2
-MD_FILE=$(python "$SCRIPT_DIR/pdf_markitdown.py" "$INPUT_FILE")
+if [[ "$IS_YOUTUBE_URL" == "true" ]]; then
+    MD_FILE=$(python "$SCRIPT_DIR/youtube_markitdown.py" "$INPUT_FILE")
+else
+    MD_FILE=$(python "$SCRIPT_DIR/pdf_markitdown.py" "$INPUT_FILE")
+fi
 echo "  [step 1/5] Output: $MD_FILE" >&2
 
 # --- Step 2: Ingest into knowledge graph ---
