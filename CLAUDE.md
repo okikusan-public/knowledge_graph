@@ -40,6 +40,13 @@ python scripts/graph_search.py "search query" -p <project> -k 3 --json
 # Agentic search (autonomous multi-tool search — Claude Code dynamically selects tools)
 # Use via /agentic-search skill (not a standalone script)
 
+# Graph quality linting
+python scripts/lint_graph.py duplicates -p <project> --threshold 0.95
+python scripts/lint_graph.py duplicates -p <project> --fix --dry-run
+python scripts/lint_graph.py orphans -p <project> --min-age 7
+python scripts/lint_graph.py stale -p <project> --stale-days 90
+python scripts/lint_graph.py all -p <project> --json
+
 # Community detection
 python scripts/community_detection.py -p <project>
 
@@ -97,6 +104,7 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **`.claude/skills/agentic-search/SKILL.md`** — Autonomous search agent skill. Unlike `/vector-search` (single vector query) and `/graph-search` (fixed pipeline), `/agentic-search` lets Claude Code dynamically choose search tools (vector_search, graph_search, x_search, Cypher), decompose complex queries, evaluate result sufficiency, and iterate up to 5 rounds before synthesizing a cited answer
 - **scripts/quiz.py** — Spaced repetition quiz system. `select` picks entities due for review (prioritizes incorrect/overdue/never-quizzed; supports topic filtering via vector similarity). `record` saves QuizResult nodes and updates Entity spaced repetition properties (last_quiz_date, correct_count, incorrect_count, quiz_interval_days). `stats` shows overall quiz statistics. Interval doubles on correct (max 90 days), resets to 1 day on incorrect
 - **scripts/archive_entity.py** — Entity archive management. `archive` sets status to archived, `restore` restores to active, `list` shows all archived entities. Archived entities are excluded from search seeds and quiz but visible during graph traversal with `[archived]` mark
+- **scripts/lint_graph.py** — Knowledge graph quality linter. `duplicates` detects near-duplicate entities via embedding cosine similarity (GDS preferred, Python fallback). `orphans` finds structurally isolated entities (no RELATES_TO/BELONGS_TO). `stale` flags entities with old source documents and time-dependent language (Japanese/English). `all` runs all checks. Supports `--fix` (merge duplicates, archive orphans) and `--dry-run`
 - **scripts/discover_relationships.py** — Auto-discovers RELATES_TO relationships between entities from different documents using embedding cosine similarity. Threshold configurable (default 0.85). Runs automatically after entity save via hook
 - **scripts/pdf_markitdown.py** — Converts PDF (or DOCX/PPTX/XLSX) to structured Markdown using Microsoft markitdown. Preserves tables, headings, and formatting that plain-text extraction loses. Outputs `{stem}_markitdown.md`
 - **scripts/youtube_markitdown.py** — Converts YouTube video to structured Markdown using markitdown. Extracts metadata (title, keywords, runtime), description, and transcript (if `youtube-transcript-api` installed). Outputs `docs/youtube_{video_id}_markitdown.md`. Supports multiple URL formats (youtube.com, youtu.be, embed, mobile)
@@ -119,5 +127,6 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **Markitdown conversion**: Output files follow `{original_stem}_markitdown.md` naming convention (parallels `_visual_extract.md`). Use for PDFs with tables, structured headings, or complex formatting. The `/pdf-markitdown` skill defaults to interactive entity extraction; pass `--auto` for fully automated pipeline via `ingest_pipeline.sh`
 - **YouTube markitdown**: Output files follow `docs/youtube_{video_id}_markitdown.md` naming convention. All YouTube URL formats are normalized to `https://www.youtube.com/watch?v={id}` before conversion (required by markitdown's YouTubeConverter). Default transcript languages are `["ja", "en"]`. Without `youtube-transcript-api`, only metadata and description are extracted (no transcript). The `/youtube-markitdown` skill follows the same Interactive/Automated pattern as `/pdf-markitdown`
 - **X search**: Output files follow `docs/x_search_{sanitized_query}_{date}.md` naming convention. Uses the `openai` package with custom `base_url="https://api.x.ai/v1"` (OpenAI SDK compatible). Default model is `grok-4-1-fast-non-reasoning` (cheapest). `web_search` tool is opt-in via `--web-search` flag. No automated pipeline mode due to per-search API costs (~$0.02/call). The `/x-search` skill is always interactive with user review before ingestion
+- **Graph linting**: `lint_graph.py` checks graph quality. `duplicates` threshold default is 0.95 (stricter than discover_relationships' 0.85). Orphan detection checks RELATES_TO/BELONGS_TO isolation (not MENTIONS/SOURCED_FROM isolation used by auto_ingest cleanup). Stale detection requires both old source AND time-dependent language. `--fix` for duplicates merges into the entity with the longest description; `--fix` for orphans archives (not deletes)
 - **Agentic search**: `/agentic-search` is a meta-skill that orchestrates existing search tools. It never modifies the graph (read-only). Maximum 5 search invocations per query. `x_search` is only used when the user explicitly asks about recent/real-time information or when internal results are clearly insufficient for a time-sensitive query. All answers include source citations. Responds in the same language as the user's query
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`

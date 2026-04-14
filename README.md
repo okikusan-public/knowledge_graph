@@ -18,6 +18,7 @@ knowledge_graph/
 │   ├── community_detection.py       # GDS Leiden 3-level community detection
 │   ├── embed_existing.py            # Batch-assign embeddings to existing nodes
 │   ├── graph_search.py              # Vector search + graph traversal hybrid
+│   ├── lint_graph.py                # Graph quality linter (duplicates/orphans/stale)
 │   ├── archive_entity.py            # Entity archive management (archive/restore/list)
 │   ├── quiz.py                      # Spaced repetition quiz system
 │   ├── pdf_markitdown.py             # PDF → structured Markdown (via markitdown)
@@ -32,7 +33,8 @@ knowledge_graph/
     ├── test_pdf_markitdown.py       # Unit + integration tests for markitdown conversion
     ├── test_youtube_markitdown.py   # Unit + integration tests for YouTube conversion
     ├── test_x_search.py              # Unit + integration tests for X search
-    └── test_graph_search.py         # Integration tests for graph traversal search
+    ├── test_graph_search.py         # Integration tests for graph traversal search
+    └── test_lint_graph.py           # Unit + integration tests for graph linter
 ```
 
 ## Setup
@@ -337,6 +339,33 @@ Archived entities are excluded from:
 - Quiz entity selection
 
 Archived entities remain visible when discovered via graph traversal (RELATES_TO) with an `[archived]` marker.
+
+### Graph Quality Linting
+
+Detect and fix quality issues in the knowledge graph: near-duplicate entities, structurally isolated entities, and stale entities with outdated time-dependent language.
+
+```bash
+# Detect near-duplicate entities (embedding similarity > 0.95)
+python scripts/lint_graph.py duplicates -p <project>
+python scripts/lint_graph.py duplicates -p <project> --threshold 0.90
+
+# Detect structurally isolated entities (no RELATES_TO/BELONGS_TO)
+python scripts/lint_graph.py orphans -p <project>
+python scripts/lint_graph.py orphans -p <project> --min-age 7
+
+# Detect stale entities (old source + time-dependent language)
+python scripts/lint_graph.py stale -p <project> --stale-days 90
+
+# Run all checks
+python scripts/lint_graph.py all -p <project> --json
+
+# Fix mode (merge duplicates, archive orphans)
+python scripts/lint_graph.py duplicates -p <project> --fix --dry-run  # Preview
+python scripts/lint_graph.py duplicates -p <project> --fix            # Apply
+python scripts/lint_graph.py orphans -p <project> --fix
+```
+
+Duplicate detection uses embedding cosine similarity (GDS preferred, Python fallback). Orphan fix archives entities (not deletes). Stale detection has no `--fix` (requires human judgment).
 
 ### Community Detection
 
