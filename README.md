@@ -152,6 +152,25 @@ Processing pipeline:
 3. Gathers source Chunks and SOURCED_FROM provenance
 4. Claude synthesizes all context into a coherent answer (via `/graph-search` skill)
 
+### Agentic Search (Autonomous Multi-Tool Search)
+
+Unlike `/vector-search` (single query) or `/graph-search` (fixed pipeline), `/agentic-search` makes Claude Code an autonomous search agent that dynamically selects tools, decomposes queries, evaluates results, and iterates.
+
+```bash
+# Via Claude Code skill
+/agentic-search "What technologies are used and how do they relate?"
+/agentic-search "Compare concept A and concept B" --project project_a
+```
+
+Processing pipeline:
+1. Classify query type (factual, comparison, relationship, thematic, temporal, structural)
+2. Select initial search tool (vector_search, graph_search, x_search, or Cypher)
+3. Execute search and evaluate result sufficiency
+4. If insufficient: reformulate query, try different tools/node types, or decompose further
+5. Repeat up to 5 rounds, then synthesize answer with source citations
+
+When the knowledge graph lacks direct information, the agent supplements with LLM knowledge and clearly distinguishes graph-sourced facts from general knowledge.
+
 ### Visual Content Extraction (Visual Extract)
 
 Extract semantic information from PDF pages — including diagrams, charts, and embedded text — using Claude's vision capabilities. For Office documents (PPTX, DOCX, etc.), convert to PDF first using Keynote, PowerPoint, or print-to-PDF.

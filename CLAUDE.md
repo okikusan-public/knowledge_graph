@@ -37,6 +37,9 @@ python scripts/vector_search.py "search query" -p <project> -t chunk -k 5
 # Graph search (vector + graph traversal hybrid)
 python scripts/graph_search.py "search query" -p <project> -k 3 --json
 
+# Agentic search (autonomous multi-tool search — Claude Code dynamically selects tools)
+# Use via /agentic-search skill (not a standalone script)
+
 # Community detection
 python scripts/community_detection.py -p <project>
 
@@ -91,6 +94,7 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **scripts/render_pages.py** — Renders each PDF page as PNG (via pymupdf). Preprocessing step for the `/visual-extract` skill. Users must convert PPTX etc. to PDF beforehand
 - **scripts/add_knowledge.py** — Direct knowledge input without document files. Creates dynamic source nodes (Note, WebSource, Conversation, or any custom label) with entities and SOURCED_FROM links. Label and property keys are validated (alphanumeric only) to prevent Cypher injection
 - **scripts/graph_search.py** — Hybrid search: vector similarity for seed nodes + graph traversal (RELATES_TO, BELONGS_TO, MENTIONS, SOURCED_FROM) for context expansion. Returns structured results with provenance
+- **`.claude/skills/agentic-search/SKILL.md`** — Autonomous search agent skill. Unlike `/vector-search` (single vector query) and `/graph-search` (fixed pipeline), `/agentic-search` lets Claude Code dynamically choose search tools (vector_search, graph_search, x_search, Cypher), decompose complex queries, evaluate result sufficiency, and iterate up to 5 rounds before synthesizing a cited answer
 - **scripts/quiz.py** — Spaced repetition quiz system. `select` picks entities due for review (prioritizes incorrect/overdue/never-quizzed; supports topic filtering via vector similarity). `record` saves QuizResult nodes and updates Entity spaced repetition properties (last_quiz_date, correct_count, incorrect_count, quiz_interval_days). `stats` shows overall quiz statistics. Interval doubles on correct (max 90 days), resets to 1 day on incorrect
 - **scripts/archive_entity.py** — Entity archive management. `archive` sets status to archived, `restore` restores to active, `list` shows all archived entities. Archived entities are excluded from search seeds and quiz but visible during graph traversal with `[archived]` mark
 - **scripts/discover_relationships.py** — Auto-discovers RELATES_TO relationships between entities from different documents using embedding cosine similarity. Threshold configurable (default 0.85). Runs automatically after entity save via hook
@@ -115,4 +119,5 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **Markitdown conversion**: Output files follow `{original_stem}_markitdown.md` naming convention (parallels `_visual_extract.md`). Use for PDFs with tables, structured headings, or complex formatting. The `/pdf-markitdown` skill defaults to interactive entity extraction; pass `--auto` for fully automated pipeline via `ingest_pipeline.sh`
 - **YouTube markitdown**: Output files follow `docs/youtube_{video_id}_markitdown.md` naming convention. All YouTube URL formats are normalized to `https://www.youtube.com/watch?v={id}` before conversion (required by markitdown's YouTubeConverter). Default transcript languages are `["ja", "en"]`. Without `youtube-transcript-api`, only metadata and description are extracted (no transcript). The `/youtube-markitdown` skill follows the same Interactive/Automated pattern as `/pdf-markitdown`
 - **X search**: Output files follow `docs/x_search_{sanitized_query}_{date}.md` naming convention. Uses the `openai` package with custom `base_url="https://api.x.ai/v1"` (OpenAI SDK compatible). Default model is `grok-4-1-fast-non-reasoning` (cheapest). `web_search` tool is opt-in via `--web-search` flag. No automated pipeline mode due to per-search API costs (~$0.02/call). The `/x-search` skill is always interactive with user review before ingestion
+- **Agentic search**: `/agentic-search` is a meta-skill that orchestrates existing search tools. It never modifies the graph (read-only). Maximum 5 search invocations per query. `x_search` is only used when the user explicitly asks about recent/real-time information or when internal results are clearly insufficient for a time-sensitive query. All answers include source citations. Responds in the same language as the user's query
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`
