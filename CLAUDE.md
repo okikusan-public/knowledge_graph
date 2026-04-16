@@ -52,6 +52,8 @@ python scripts/export_knowledge.py -p <project> -o backup.json
 python scripts/export_knowledge.py -p <project> --no-embeddings -o backup_light.json
 python scripts/export_knowledge.py -p <project> --source-path /path/to/file.pdf -o partial.json
 python scripts/export_knowledge.py -p <project> --entity-type PERSON -o people.json
+python scripts/export_knowledge.py -p <project> --community "タイトル" -o community.json
+python scripts/export_knowledge.py -p <project> --community-id <uuid> -o community.json
 python scripts/import_knowledge.py backup.json -p <project>
 python scripts/import_knowledge.py backup.json -p <project> --dry-run
 python scripts/import_knowledge.py backup.json -p <project> --regenerate-embeddings

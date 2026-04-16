@@ -279,6 +279,12 @@ python scripts/export_knowledge.py -p <project> --source-path /path/to/file.pdf 
 # Export only entities of a specific type
 python scripts/export_knowledge.py -p <project> --entity-type PERSON -o people.json
 
+# Export only data under a specific community (title partial match)
+python scripts/export_knowledge.py -p <project> --community "AI技術" -o ai_community.json
+
+# Export only data under a specific community (exact ID)
+python scripts/export_knowledge.py -p <project> --community-id <uuid> -o community.json
+
 # Import into a project
 python scripts/import_knowledge.py backup.json -p <project>
 

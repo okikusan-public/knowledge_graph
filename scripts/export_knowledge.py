@@ -55,6 +55,9 @@ def export_documents(session, filters, include_embeddings):
     if filters.get("source_path"):
         where_parts.append("d.source_path = $source_path")
         params["source_path"] = filters["source_path"]
+    if filters.get("doc_ids") is not None:
+        where_parts.append("d.id IN $doc_ids")
+        params["doc_ids"] = filters["doc_ids"]
 
     where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
 
@@ -98,7 +101,10 @@ def export_entities(session, filters, include_embeddings):
     if filters.get("entity_type"):
         where_parts.append("e.type = $entity_type")
         params["entity_type"] = filters["entity_type"]
-    if filters.get("doc_ids") is not None:
+    if filters.get("entity_ids") is not None:
+        where_parts.append("e.id IN $entity_ids")
+        params["entity_ids"] = filters["entity_ids"]
+    elif filters.get("doc_ids") is not None:
         where_parts.append(
             "EXISTS { MATCH (e)-[:SOURCED_FROM]->(d:Document) WHERE d.id IN $doc_ids }")
         params["doc_ids"] = filters["doc_ids"]
@@ -121,16 +127,26 @@ def export_entities(session, filters, include_embeddings):
     return [serialize_record(r) for r in records]
 
 
-def export_communities(session, include_embeddings):
-    """Export Community nodes."""
+def export_communities(session, include_embeddings, comm_ids=None):
+    """Export Community nodes, optionally filtered by IDs."""
     emb_expr = "c.embedding" if include_embeddings else "null"
-    records = session.run(f"""
-        MATCH (c:Community)
-        RETURN c.id AS id, c.level AS level, c.title AS title,
-               c.summary AS summary, c.rank AS rank,
-               {emb_expr} AS embedding
-        ORDER BY c.level, c.title
-    """).data()
+    if comm_ids is not None:
+        records = session.run(f"""
+            MATCH (c:Community)
+            WHERE c.id IN $comm_ids
+            RETURN c.id AS id, c.level AS level, c.title AS title,
+                   c.summary AS summary, c.rank AS rank,
+                   {emb_expr} AS embedding
+            ORDER BY c.level, c.title
+        """, comm_ids=comm_ids).data()
+    else:
+        records = session.run(f"""
+            MATCH (c:Community)
+            RETURN c.id AS id, c.level AS level, c.title AS title,
+                   c.summary AS summary, c.rank AS rank,
+                   {emb_expr} AS embedding
+            ORDER BY c.level, c.title
+        """).data()
     return [serialize_record(r) for r in records]
 
 
@@ -317,16 +333,111 @@ def export_quiz_result_for(session):
             for r in records]
 
 
+# ── Community Filter ──────────────────────────────────────────────────
+
+def resolve_community(session, community_title=None, community_id=None):
+    """Resolve a community by title (partial match) or ID. Returns community ID."""
+    if community_id:
+        record = session.run(
+            "MATCH (c:Community {id: $id}) RETURN c.id AS id, c.title AS title",
+            id=community_id).single()
+        if not record:
+            print(f"  [error] Community not found: {community_id}", file=sys.stderr)
+            sys.exit(1)
+        print(f"  [community] {record['title']} (id: {record['id'][:8]}...)",
+              file=sys.stderr)
+        return record["id"]
+
+    if community_title:
+        records = session.run(
+            "MATCH (c:Community) WHERE c.title CONTAINS $title "
+            "RETURN c.id AS id, c.title AS title, c.level AS level "
+            "ORDER BY c.level DESC, c.title",
+            title=community_title).data()
+        if not records:
+            print(f"  [error] No community matching: {community_title}", file=sys.stderr)
+            sys.exit(1)
+        if len(records) > 1:
+            print(f"  [error] Multiple communities match '{community_title}':",
+                  file=sys.stderr)
+            for r in records[:10]:
+                print(f"    - [L{r['level']}] {r['title']} (id: {r['id'][:8]}...)",
+                      file=sys.stderr)
+            if len(records) > 10:
+                print(f"    ... and {len(records) - 10} more", file=sys.stderr)
+            print("  [hint] Use --community-id to specify exactly", file=sys.stderr)
+            sys.exit(1)
+        record = records[0]
+        print(f"  [community] {record['title']} (L{record['level']}, id: {record['id'][:8]}...)",
+              file=sys.stderr)
+        return record["id"]
+
+    return None
+
+
+def get_community_scope(session, community_id):
+    """Get all entity IDs and doc IDs within a community's scope.
+
+    Traverses CHILD_OF to include sub-communities, then collects:
+    - community_ids: the community + all descendant communities
+    - entity_ids: all entities belonging to those communities
+    - doc_ids: all documents sourced from those entities
+    """
+    # Get community + descendants via CHILD_OF
+    community_ids = session.run("""
+        MATCH (root:Community {id: $id})
+        OPTIONAL MATCH (child:Community)-[:CHILD_OF*]->(root)
+        WITH collect(DISTINCT root.id) + collect(DISTINCT child.id) AS ids
+        UNWIND ids AS cid
+        RETURN DISTINCT cid
+    """, id=community_id).data()
+    comm_ids = [r["cid"] for r in community_ids if r["cid"] is not None]
+    print(f"  [scope] {len(comm_ids)} communities (including descendants)", file=sys.stderr)
+
+    # Get entities belonging to those communities
+    entity_records = session.run("""
+        MATCH (e:Entity)-[:BELONGS_TO]->(c:Community)
+        WHERE c.id IN $comm_ids
+        RETURN DISTINCT e.id AS id
+    """, comm_ids=comm_ids).data()
+    entity_ids = [r["id"] for r in entity_records]
+    print(f"  [scope] {len(entity_ids)} entities", file=sys.stderr)
+
+    # Get documents sourced from those entities
+    doc_records = session.run("""
+        MATCH (e:Entity)-[:SOURCED_FROM]->(d:Document)
+        WHERE e.id IN $entity_ids
+        RETURN DISTINCT d.id AS id
+    """, entity_ids=entity_ids).data()
+    doc_ids = [r["id"] for r in doc_records]
+    print(f"  [scope] {len(doc_ids)} documents", file=sys.stderr)
+
+    return comm_ids, entity_ids, doc_ids
+
+
 # ── Main Export ──────────────────────────────────────────────────────
 
 def export_graph(driver, cfg, filters, include_embeddings):
     """Export the full graph to a dict."""
     with driver.session() as session:
+        # ── Community filter: derive entity_ids and doc_ids from community scope
+        comm_ids = None
+        community_entity_ids = None
+        community_doc_ids = None
+        if filters.get("community_title") or filters.get("community_id"):
+            root_id = resolve_community(
+                session, filters.get("community_title"), filters.get("community_id"))
+            comm_ids, community_entity_ids, community_doc_ids = \
+                get_community_scope(session, root_id)
+
         # Determine doc_ids for filtering
         doc_ids = None
         if filters.get("source_path"):
             docs = export_documents(session, filters, include_embeddings)
             doc_ids = [d["id"] for d in docs]
+        elif community_doc_ids is not None:
+            doc_ids = community_doc_ids
+            docs = export_documents(session, {"doc_ids": doc_ids}, include_embeddings)
         else:
             docs = export_documents(session, {}, include_embeddings)
 
@@ -336,13 +447,21 @@ def export_graph(driver, cfg, filters, include_embeddings):
         print(f"  [export] {len(chunks)} chunks", file=sys.stderr)
 
         entity_filters = dict(filters)
-        if doc_ids is not None:
+        if community_entity_ids is not None:
+            entity_filters["entity_ids"] = community_entity_ids
+        elif doc_ids is not None:
             entity_filters["doc_ids"] = doc_ids
         entities = export_entities(session, entity_filters, include_embeddings)
-        entity_ids = [e["id"] for e in entities] if (doc_ids is not None or filters.get("entity_type")) else None
+        entity_ids = [e["id"] for e in entities] if (
+            doc_ids is not None or community_entity_ids is not None
+            or filters.get("entity_type")) else None
         print(f"  [export] {len(entities)} entities", file=sys.stderr)
 
-        communities = export_communities(session, include_embeddings)
+        # Communities: scoped or full
+        if comm_ids is not None:
+            communities = export_communities(session, include_embeddings, comm_ids)
+        else:
+            communities = export_communities(session, include_embeddings)
         print(f"  [export] {len(communities)} communities", file=sys.stderr)
 
         quiz_results = export_quiz_results(session)
@@ -358,8 +477,11 @@ def export_graph(driver, cfg, filters, include_embeddings):
         mentions = export_mentions(session, doc_ids)
         sourced_from = export_sourced_from(session, entity_ids)
         relates_to = export_relates_to(session, entity_ids)
-        belongs_to = export_belongs_to(session)
-        child_of = export_child_of(session)
+        belongs_to = export_belongs_to(session) if comm_ids is None else \
+            [r for r in export_belongs_to(session) if r["_end_id"] in set(comm_ids)]
+        child_of = export_child_of(session) if comm_ids is None else \
+            [r for r in export_child_of(session)
+             if r["_start_id"] in set(comm_ids) or r["_end_id"] in set(comm_ids)]
         quiz_result_for = export_quiz_result_for(session)
 
         rel_stats = {
@@ -393,6 +515,8 @@ def export_graph(driver, cfg, filters, include_embeddings):
             "filters": {
                 "source_path": filters.get("source_path"),
                 "entity_type": filters.get("entity_type"),
+                "community_title": filters.get("community_title"),
+                "community_id": filters.get("community_id"),
             },
             "stats": {
                 "nodes": node_stats,
@@ -424,6 +548,10 @@ def main():
                         help="Export only data related to this document path")
     parser.add_argument("--entity-type", default=None,
                         help="Export only entities of this type (e.g. PERSON, TECHNOLOGY)")
+    parser.add_argument("--community", default=None,
+                        help="Export only data under this community (title partial match)")
+    parser.add_argument("--community-id", default=None,
+                        help="Export only data under this community (exact ID)")
     parser.add_argument("-o", "--output", default=None,
                         help="Output file path (default: stdout)")
     args = parser.parse_args()
@@ -436,6 +564,10 @@ def main():
         filters["source_path"] = args.source_path
     if args.entity_type:
         filters["entity_type"] = args.entity_type
+    if args.community:
+        filters["community_title"] = args.community
+    if args.community_id:
+        filters["community_id"] = args.community_id
 
     include_embeddings = not args.no_embeddings
 

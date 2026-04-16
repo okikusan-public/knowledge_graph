@@ -21,6 +21,8 @@ from neo4j.time import DateTime as Neo4jDateTime
 from config import get_config
 from export_knowledge import (
     export_graph,
+    resolve_community,
+    get_community_scope,
     serialize_value,
     serialize_record,
     FORMAT_VERSION,
@@ -527,6 +529,130 @@ class TestExportImportJSON(unittest.TestCase):
             self.assertIn("EI_JSON_TestEntity", entity_names)
         finally:
             os.unlink(tmp_path)
+
+
+class TestCommunityFilter(unittest.TestCase):
+    """Test community-based export filtering with synthetic data."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.driver, cls.cfg = _get_driver()
+        cls.prefix = "EI_TEST_COMM"
+        cls.comm_id = str(uuid.uuid4())
+        cls.child_comm_id = str(uuid.uuid4())
+        cls.ent_name = f"{cls.prefix}_CommEntity"
+        cls.ent_id = str(uuid.uuid4())
+        cls.doc_id = str(uuid.uuid4())
+        cls.chunk_id = str(uuid.uuid4())
+
+        with cls.driver.session() as s:
+            # Create community hierarchy
+            s.run("""
+                CREATE (c:Community {
+                    id: $id, level: 2, title: $title,
+                    summary: 'Test community', rank: 0.5
+                })
+            """, id=cls.comm_id, title=f"{cls.prefix}_TopComm")
+            s.run("""
+                CREATE (c:Community {
+                    id: $id, level: 1, title: $title,
+                    summary: 'Test child community', rank: 0.3
+                })
+            """, id=cls.child_comm_id, title=f"{cls.prefix}_ChildComm")
+            s.run("""
+                MATCH (child:Community {id: $child_id}),
+                      (parent:Community {id: $parent_id})
+                CREATE (child)-[:CHILD_OF]->(parent)
+            """, child_id=cls.child_comm_id, parent_id=cls.comm_id)
+
+            # Create entity belonging to child community
+            s.run("""
+                CREATE (e:Entity {
+                    id: $id, name: $name, type: 'CONCEPT',
+                    description: 'Test entity in community', status: 'active'
+                })
+            """, id=cls.ent_id, name=cls.ent_name)
+            s.run("""
+                MATCH (e:Entity {id: $eid}), (c:Community {id: $cid})
+                CREATE (e)-[:BELONGS_TO {level: 1}]->(c)
+            """, eid=cls.ent_id, cid=cls.child_comm_id)
+
+            # Create document + chunk sourced from entity
+            s.run("""
+                CREATE (d:Document {
+                    id: $id, title: $title, source_path: $path,
+                    file_type: 'md', text_length: 100, chunk_count: 1,
+                    auto_ingested: true, created_at: datetime()
+                })
+            """, id=cls.doc_id, title=f"{cls.prefix}_doc.md",
+                 path=f"/tmp/{cls.prefix}_doc.md")
+            s.run("""
+                MATCH (d:Document {id: $doc_id})
+                CREATE (c:Chunk {id: $cid, text: $text, chunk_index: 0, token_estimate: 50})
+                CREATE (d)-[:HAS_CHUNK]->(c)
+            """, doc_id=cls.doc_id, cid=cls.chunk_id,
+                 text=f"{cls.ent_name} is in a community.")
+            s.run("""
+                MATCH (e:Entity {id: $eid}), (d:Document {id: $did})
+                CREATE (e)-[:SOURCED_FROM {created_at: datetime()}]->(d)
+            """, eid=cls.ent_id, did=cls.doc_id)
+
+    @classmethod
+    def tearDownClass(cls):
+        with cls.driver.session() as s:
+            s.run("MATCH (c:Community) WHERE c.title STARTS WITH $p DETACH DELETE c",
+                  p=f"{cls.prefix}_")
+            s.run("MATCH (e:Entity) WHERE e.name STARTS WITH $p DETACH DELETE e",
+                  p=f"{cls.prefix}_")
+            s.run("""
+                MATCH (d:Document) WHERE d.source_path STARTS WITH $p
+                OPTIONAL MATCH (d)-[:HAS_CHUNK]->(c)
+                DETACH DELETE c, d
+            """, p=f"/tmp/{cls.prefix}_")
+        cls.driver.close()
+
+    def test_resolve_community_by_title(self):
+        with self.driver.session() as s:
+            cid = resolve_community(s, community_title=f"{self.prefix}_TopComm")
+        self.assertEqual(cid, self.comm_id)
+
+    def test_resolve_community_by_id(self):
+        with self.driver.session() as s:
+            cid = resolve_community(s, community_id=self.comm_id)
+        self.assertEqual(cid, self.comm_id)
+
+    def test_resolve_community_not_found(self):
+        with self.driver.session() as s:
+            with self.assertRaises(SystemExit):
+                resolve_community(s, community_id="nonexistent-id")
+
+    def test_community_scope_includes_descendants(self):
+        with self.driver.session() as s:
+            comm_ids, entity_ids, doc_ids = get_community_scope(s, self.comm_id)
+        self.assertIn(self.comm_id, comm_ids)
+        self.assertIn(self.child_comm_id, comm_ids)
+        self.assertIn(self.ent_id, entity_ids)
+        self.assertIn(self.doc_id, doc_ids)
+
+    def test_export_community_filter(self):
+        filters = {"community_id": self.comm_id}
+        data = export_graph(self.driver, self.cfg, filters, False)
+
+        # Should include our test community and child
+        comm_ids_in_export = [c["id"] for c in data["nodes"]["Community"]]
+        self.assertIn(self.comm_id, comm_ids_in_export)
+        self.assertIn(self.child_comm_id, comm_ids_in_export)
+
+        # Should include our test entity
+        ent_names = [e["name"] for e in data["nodes"]["Entity"]]
+        self.assertIn(self.ent_name, ent_names)
+
+        # Should include our test document
+        doc_ids = [d["id"] for d in data["nodes"]["Document"]]
+        self.assertIn(self.doc_id, doc_ids)
+
+        # Metadata should record the filter
+        self.assertEqual(data["metadata"]["filters"]["community_id"], self.comm_id)
 
 
 if __name__ == "__main__":
