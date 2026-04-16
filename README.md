@@ -25,6 +25,8 @@ knowledge_graph/
 │   ├── youtube_markitdown.py        # YouTube → structured Markdown (metadata + transcript)
 │   ├── x_search.py                  # X (Twitter) search via Grok API → Markdown
 │   ├── ingest_pipeline.sh           # Full automation: markitdown → ingest → entities
+│   ├── export_knowledge.py          # Export graph data to JSON (backup/transfer)
+│   ├── import_knowledge.py          # Import graph data from JSON
 │   ├── render_pages.py              # PDF → per-page PNG (visual-extract preprocessing)
 │   └── vector_search.py             # Vector similarity search CLI
 └── tests/
@@ -34,7 +36,8 @@ knowledge_graph/
     ├── test_youtube_markitdown.py   # Unit + integration tests for YouTube conversion
     ├── test_x_search.py              # Unit + integration tests for X search
     ├── test_graph_search.py         # Integration tests for graph traversal search
-    └── test_lint_graph.py           # Unit + integration tests for graph linter
+    ├── test_lint_graph.py           # Unit + integration tests for graph linter
+    └── test_export_import.py        # Unit + integration tests for export/import
 ```
 
 ## Setup
@@ -258,6 +261,43 @@ python scripts/x_search.py "knowledge graphs" --web-search -o docs/custom_output
 Requires: `pip install openai` and `XAI_API_KEY` environment variable (get key at https://console.x.ai/).
 
 Output is saved to `docs/x_search_{query}_{date}.md`. The `/x-search` skill is always interactive (no `--auto` mode) due to per-search API costs (~$0.02/search).
+
+### Knowledge Export / Import
+
+Export the entire knowledge graph (or a filtered subset) to JSON for backup, migration, or cross-project transfer. Import restores the data using MERGE for safe, idempotent writes.
+
+```bash
+# Export entire graph to JSON
+python scripts/export_knowledge.py -p <project> -o backup.json
+
+# Export without embeddings (reduces file size ~90%)
+python scripts/export_knowledge.py -p <project> --no-embeddings -o backup_light.json
+
+# Export only data related to a specific document
+python scripts/export_knowledge.py -p <project> --source-path /path/to/file.pdf -o partial.json
+
+# Export only entities of a specific type
+python scripts/export_knowledge.py -p <project> --entity-type PERSON -o people.json
+
+# Import into a project
+python scripts/import_knowledge.py backup.json -p <project>
+
+# Dry-run (preview what would be imported without writing)
+python scripts/import_knowledge.py backup.json -p <project> --dry-run
+
+# Import and regenerate missing embeddings
+python scripts/import_knowledge.py backup_light.json -p <project> --regenerate-embeddings
+```
+
+Export format is versioned JSON (v1.0) containing:
+- **Metadata**: export date, project, node/relationship counts
+- **Nodes**: Document, Chunk, Entity, Community, QuizResult, and dynamic source nodes (Note, WebSource, Conversation)
+- **Relationships**: HAS_CHUNK, NEXT_CHUNK, MENTIONS, SOURCED_FROM, RELATES_TO, BELONGS_TO, CHILD_OF, QUIZ_RESULT_FOR
+
+Import behavior:
+- Entity nodes merge on `name` (longer description wins, existing type preserved)
+- All other nodes merge on `id` (UUID-based, idempotent)
+- Entity ID remapping ensures relationships resolve correctly when merging into non-empty graphs
 
 ### Direct Knowledge Input
 

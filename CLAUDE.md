@@ -47,6 +47,15 @@ python scripts/lint_graph.py orphans -p <project> --min-age 7
 python scripts/lint_graph.py stale -p <project> --stale-days 90
 python scripts/lint_graph.py all -p <project> --json
 
+# Knowledge export/import (backup, cross-project transfer)
+python scripts/export_knowledge.py -p <project> -o backup.json
+python scripts/export_knowledge.py -p <project> --no-embeddings -o backup_light.json
+python scripts/export_knowledge.py -p <project> --source-path /path/to/file.pdf -o partial.json
+python scripts/export_knowledge.py -p <project> --entity-type PERSON -o people.json
+python scripts/import_knowledge.py backup.json -p <project>
+python scripts/import_knowledge.py backup.json -p <project> --dry-run
+python scripts/import_knowledge.py backup.json -p <project> --regenerate-embeddings
+
 # Community detection
 python scripts/community_detection.py -p <project>
 
@@ -100,6 +109,8 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **scripts/extract_entities.py** — Optional standalone tool using Claude API (tool_use) to extract entities. Requires `ANTHROPIC_API_KEY` env var. Not needed when using Claude Code skills (Claude Code extracts entities itself)
 - **scripts/render_pages.py** — Renders each PDF page as PNG (via pymupdf). Preprocessing step for the `/visual-extract` skill. Users must convert PPTX etc. to PDF beforehand
 - **scripts/add_knowledge.py** — Direct knowledge input without document files. Creates dynamic source nodes (Note, WebSource, Conversation, or any custom label) with entities and SOURCED_FROM links. Label and property keys are validated (alphanumeric only) to prevent Cypher injection
+- **scripts/export_knowledge.py** — Exports all graph data (nodes + relationships) to versioned JSON (v1.0). Supports `--no-embeddings` to reduce file size, `--source-path` for document-scoped export, `--entity-type` for type filtering. Output to file (`-o`) or stdout
+- **scripts/import_knowledge.py** — Imports graph data from export JSON. Uses MERGE for idempotent writes (Entity merges on `name`, others on `id`). Handles entity ID remapping when merging into non-empty graphs. Supports `--dry-run` and `--regenerate-embeddings` (batch 32 via embedding server)
 - **scripts/graph_search.py** — Hybrid search: vector similarity for seed nodes + graph traversal (RELATES_TO, BELONGS_TO, MENTIONS, SOURCED_FROM) for context expansion. Returns structured results with provenance
 - **`.claude/skills/agentic-search/SKILL.md`** — Autonomous search agent skill. Unlike `/vector-search` (single vector query) and `/graph-search` (fixed pipeline), `/agentic-search` lets Claude Code dynamically choose search tools (vector_search, graph_search, x_search, Cypher), decompose complex queries, evaluate result sufficiency, and iterate up to 5 rounds before synthesizing a cited answer
 - **scripts/quiz.py** — Spaced repetition quiz system. `select` picks entities due for review (prioritizes incorrect/overdue/never-quizzed; supports topic filtering via vector similarity). `record` saves QuizResult nodes and updates Entity spaced repetition properties (last_quiz_date, correct_count, incorrect_count, quiz_interval_days). `stats` shows overall quiz statistics. Interval doubles on correct (max 90 days), resets to 1 day on incorrect
@@ -129,4 +140,5 @@ Python deps: `pip install sentence-transformers neo4j requests pymupdf python-do
 - **X search**: Output files follow `docs/x_search_{sanitized_query}_{date}.md` naming convention. Uses the `openai` package with custom `base_url="https://api.x.ai/v1"` (OpenAI SDK compatible). Default model is `grok-4-1-fast-non-reasoning` (cheapest). `web_search` tool is opt-in via `--web-search` flag. No automated pipeline mode due to per-search API costs (~$0.02/call). The `/x-search` skill is always interactive with user review before ingestion
 - **Graph linting**: `lint_graph.py` checks graph quality. `duplicates` threshold default is 0.95 (stricter than discover_relationships' 0.85). Orphan detection checks RELATES_TO/BELONGS_TO isolation (not MENTIONS/SOURCED_FROM isolation used by auto_ingest cleanup). Stale detection requires both old source AND time-dependent language. `--fix` for duplicates merges into the entity with the longest description; `--fix` for orphans archives (not deletes)
 - **Agentic search**: `/agentic-search` is a meta-skill that orchestrates existing search tools. It never modifies the graph (read-only). Maximum 5 search invocations per query. `x_search` is only used when the user explicitly asks about recent/real-time information or when internal results are clearly insufficient for a time-sensitive query. All answers include source citations. Responds in the same language as the user's query
+- **Knowledge export/import**: Export format is versioned JSON (v1.0) with metadata header, nodes section (keyed by label), and relationships section (keyed by type). Entity import uses `MERGE on name` (consistent with save_entities.py) with ID remapping for relationships. Other nodes use `MERGE on id`. `--no-embeddings` reduces file size ~90%. Communities and QuizResults are always exported in full (not filtered by `--source-path`). Dynamic source node labels are validated with `isalnum()` on both export and import
 - **Adding projects**: Add an entry to the `PROJECTS` dict in `config.py`
